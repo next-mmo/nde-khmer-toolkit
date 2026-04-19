@@ -1,10 +1,11 @@
 ## KFA (Khmer Forced Aligner) - Native Rust Port
 
-A stupid-fast Khmer Forced Aligner powered by **Wav2Vec2CTC**, **Phonetisaurus**, and **ONNXRuntime**, written entirely in native Rust.
+A super-fast Khmer Forced Aligner powered by **Wav2Vec2CTC**, **Phonetisaurus**, and **ONNXRuntime**, written entirely in native Rust.
 
-> **Credits:** This repository is a native Rust implementation based on the original idea and Python [KFA](https://github.com/seanghay/kfa) project by **Seanghay Yath (@seanghay)**.
+> **Credits:** This repository is a native Rust implementation based on the original Python [KFA](https://github.com/seanghay/kfa) project by **Seanghay Yath (@seanghay)**.
 
 ### Features
+
 - Native Viterbi CTC Forced Alignment rewritten in Rust via `ndarray`.
 - Full Khmer syllable-level unicode normalization and CRF-based tokenization.
 - Support for generating both `jsonl` metrics and exact `whisper`-compatible segment outputs.
@@ -26,8 +27,8 @@ cargo build --release
 
 ### Setup
 
-*   **GPU Support**: Requires NVIDIA Drivers and CUDA Toolkit installed on your system.
-*   **Automatic Download**: The `ort` crate will handle fetching the necessary `.dll` files. No manual library management is required.
+- **GPU Support**: Requires NVIDIA Drivers and CUDA Toolkit installed on your system.
+- **Automatic Download**: The `ort` crate will handle fetching the necessary `.dll` files. No manual library management is required.
 
 ---
 
@@ -35,8 +36,7 @@ cargo build --release
 
 The `kfa-cli` orchestrates reading the source Audio file and a pre-generated **Text** file to produce the highly accurate start/end subtitle alignments.
 
-> [!Note]
-> The **input audio sample rate must be exactly 16kHz Mono**. Any other configurations will be warned and drastically affect model performance.
+> [!Note] The **input audio sample rate must be exactly 16kHz Mono**. Any other configurations will be warned and drastically affect model performance.
 
 #### Command Line
 
@@ -63,6 +63,7 @@ cargo run --release -p transcribe-audio-to-text -- --audio path/to/your/audio.wa
 ---
 
 ### References
+
 - [MMS: Scaling Speech Technology to 1000+ languages](https://github.com/facebookresearch/fairseq/tree/main/examples/mms)
 - [CTC FORCED ALIGNMENT API TUTORIAL](https://pytorch.org/audio/main/tutorials/ctc_forced_alignment_api_tutorial.html)
 - [Phonetisaurus](https://github.com/AdolfVonKleist/Phonetisaurus)
