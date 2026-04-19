@@ -1,0 +1,3 @@
+[env]
+ORT_VERSION = "1.17.0"
+ORT_STRATEGY = "download"

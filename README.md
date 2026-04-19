@@ -21,9 +21,6 @@ Ensure you have [Rust](https://rustup.rs/) installed. The pipeline is configured
 git clone https://github.com/next-mmo/nde-khmer-toolkit.git
 cd nde-khmer-toolkit
 
-# Set the target version for the automatic downloader
-$env:ORT_VERSION="1.17.0"
-
 cargo build --release
 ```
 
