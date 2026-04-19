@@ -11,7 +11,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-authors = ["Seanghay Yath <seanghay.dev@gmail.com>"]
+authors = ["Sila Rim <51617383+rimsila@users.noreply.github.com>"]
 
 [profile.release]
 opt-level = 3
