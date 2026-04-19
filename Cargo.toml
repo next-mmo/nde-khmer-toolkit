@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/khmernormalizer",
+    "crates/number-verbalize",
+    "crates/kfa-core",
+    "crates/kfa-cli", "crates/transcribe-audio-to-text",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Seanghay Yath <seanghay.dev@gmail.com>"]
+
+[profile.release]
+opt-level = 3
+lto = true

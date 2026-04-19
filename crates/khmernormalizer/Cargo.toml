@@ -1,0 +1,11 @@
+[package]
+name = "khmernormalizer"
+description = "Khmer text normalization"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fancy-regex = "0.14"
+unicode-normalization = "0.1"
+once_cell = "1"
