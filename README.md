@@ -2,6 +2,8 @@
 
 A stupid-fast Khmer Forced Aligner powered by **Wav2Vec2CTC**, **Phonetisaurus**, and **ONNXRuntime**, written entirely in native Rust.
 
+> **Credits:** This repository is a native Rust port of the original Python [KFA](https://github.com/seanghay/kfa) project created by **Seanghay Yath (@seanghay)**. All core machine learning alignment algorithms, normalizer logic, and neural network topologies are credited directly to his original research and implementation.
+
 ### Features
 - Native Viterbi CTC Forced Alignment rewritten in Rust via `ndarray`.
 - Full Khmer syllable-level unicode normalization and CRF-based tokenization.
