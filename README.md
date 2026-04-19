@@ -15,19 +15,22 @@ A stupid-fast Khmer Forced Aligner powered by **Wav2Vec2CTC**, **Phonetisaurus**
 
 ### Installation & Build
 
-Ensure you have [Rust](https://rustup.rs/) installed. Since the pipeline uses Dynamic ORT loading (`load-dynamic`), make sure you have `onnxruntime.dll` (or `.so`/`.dylib` depending on your OS) available and pointed to by your environment prior to running.
+Ensure you have [Rust](https://rustup.rs/) installed. The pipeline is configured to automatically download and install **ONNX Runtime v1.17.0** with **GPU (CUDA)** support during the build process.
 
 ```shell
-git clone https://github.com/seanghay/kfa.git
-cd kfa
+git clone https://github.com/next-mmo/nde-khmer-toolkit.git
+cd nde-khmer-toolkit
+
+# Set the target version for the automatic downloader
+$env:ORT_VERSION="1.17.0"
+
 cargo build --release
 ```
 
 ### Setup
 
-Download the CPU or GPU version of ONNXRuntime (minimum v1.16+) and either:
-- Drop the `.dll` directly into your workspace.
-- Export it as an environment variable: `$env:ORT_DYLIB_PATH="C:\path\to\onnxruntime.dll"`
+*   **GPU Support**: Requires NVIDIA Drivers and CUDA Toolkit installed on your system.
+*   **Automatic Download**: The `ort` crate will handle fetching the necessary `.dll` files. No manual library management is required.
 
 ---
 
