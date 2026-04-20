@@ -15,7 +15,7 @@ const EDGE_VOICES_URL: &str = "https://speech.platform.bing.com/consumer/speech/
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = std::env::var("KFA_API_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
+    let addr = std::env::var("KFA_API_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".to_string());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     let local_addr = listener.local_addr()?;
 
