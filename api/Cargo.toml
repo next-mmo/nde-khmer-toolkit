@@ -1,0 +1,19 @@
+[package]
+name = "kfa-api"
+description = "HTTP API for Khmer Edge TTS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "kfa-api"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+edge-tts-rs = { path = "../crates/edge-tts-rs" }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }

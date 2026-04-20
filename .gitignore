@@ -190,5 +190,8 @@ Temporary Items
 
 *.onnx
 *.wav
+
+!khmer-audio-16k.wav
+
 *.txt
 .omx/state/hud-state.json

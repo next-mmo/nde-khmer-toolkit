@@ -1,10 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
+    "api",
+    "crates/edge-tts-rs",
     "crates/khmernormalizer",
     "crates/number-verbalize",
     "crates/kfa-core",
-    "crates/kfa-cli", "crates/transcribe-audio-to-text",
+    "crates/kfa-cli",
+    "crates/transcribe-audio-to-text",
 ]
 
 [workspace.package]

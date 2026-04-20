@@ -60,6 +60,31 @@ This crate automatically interfaces with your system's `ffmpeg` wrapper to conve
 cargo run --release -p transcribe-audio-to-text -- --audio path/to/your/audio.wav > transcript.txt
 ```
 
+#### Edge TTS API
+
+The workspace includes a vendored `edge-tts-rs` crate and an HTTP API with Swagger docs for Microsoft Edge text-to-speech synthesis.
+
+```shell
+cargo run -p kfa-api
+```
+
+By default, the API listens on `127.0.0.1:3000`. Override the bind address with `KFA_API_ADDR`.
+
+- Swagger UI: `http://127.0.0.1:3000/swagger-ui`
+- OpenAPI JSON: `http://127.0.0.1:3000/openapi.json`
+- Health check: `GET /health`
+- Voice list: `GET /v1/voices`
+- Speech synthesis: `POST /v1/tts`
+
+Example synthesis request:
+
+```shell
+curl -X POST http://127.0.0.1:3000/v1/tts \
+  -H "content-type: application/json" \
+  -o speech.mp3 \
+  -d "{\"text\":\"Hello from KFA\",\"voice_name\":\"km-KH-SreymomNeural\"}"
+```
+
 ---
 
 ### References
