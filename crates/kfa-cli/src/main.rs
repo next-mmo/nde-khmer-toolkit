@@ -38,6 +38,7 @@ struct Args {
 enum OutputFormat {
     Jsonl,
     Whisper,
+    Srt,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -132,6 +133,40 @@ fn write_whisper(
     Ok(())
 }
 
+fn format_timestamp(seconds: f64) -> String {
+    let hours = (seconds / 3600.0) as u32;
+    let mins = ((seconds % 3600.0) / 60.0) as u32;
+    let secs = (seconds % 60.0) as u32;
+    let millis = (seconds.fract() * 1000.0) as u32;
+    format!("{:02}:{:02}:{:02},{:03}", hours, mins, secs, millis)
+}
+
+fn write_srt(
+    output_path: &PathBuf,
+    results: &[(String, f64, f64, f64, f64, f32)],
+) -> Result<()> {
+    let mut dest = File::create(output_path)?;
+    let mut srt_index = 1;
+    
+    for r in results {
+        let trimmed = r.0.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let start_time = format_timestamp(r.1);
+        let end_time = format_timestamp(r.2);
+        
+        writeln!(dest, "{}", srt_index)?;
+        writeln!(dest, "{} --> {}", start_time, end_time)?;
+        writeln!(dest, "{}", trimmed)?;
+        writeln!(dest)?;
+        
+        srt_index += 1;
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -166,6 +201,7 @@ fn main() -> Result<()> {
     match args.format {
         OutputFormat::Jsonl => write_jsonl(&args.output, &results)?,
         OutputFormat::Whisper => write_whisper(&args.output, &results)?,
+        OutputFormat::Srt => write_srt(&args.output, &results)?,
     }
 
     println!("Done!");

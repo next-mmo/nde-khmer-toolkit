@@ -7,7 +7,7 @@ members = [
     "crates/number-verbalize",
     "crates/kfa-core",
     "crates/kfa-cli",
-    "crates/transcribe-audio-to-text",
+    "crates/transcribe-audio-to-text", "crates/kfa-wasm",
 ]
 
 [workspace.package]

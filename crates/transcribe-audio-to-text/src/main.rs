@@ -4,7 +4,11 @@ use std::path::PathBuf;
 use transcribe_audio_to_text::transcribe_audio_to_text;
 
 #[derive(Parser)]
-#[command(author, version, about = "Transcribe Khmer audio to text using Google Speech Recognition")]
+#[command(
+    author,
+    version,
+    about = "Transcribe Khmer audio to text using Google Speech Recognition"
+)]
 struct Args {
     #[arg(short, long)]
     audio: PathBuf,

@@ -1,0 +1,11 @@
+[[redirects]]
+  from = "/google-speech-api/*"
+  to = "https://www.google.com/speech-api/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
