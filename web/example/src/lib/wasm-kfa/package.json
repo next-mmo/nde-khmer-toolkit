@@ -1,0 +1,19 @@
+{
+  "name": "kfa-wasm",
+  "type": "module",
+  "collaborators": [
+    "Sila Rim <51617383+rimsila@users.noreply.github.com>"
+  ],
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "files": [
+    "kfa_wasm_bg.wasm",
+    "kfa_wasm.js",
+    "kfa_wasm.d.ts"
+  ],
+  "main": "kfa_wasm.js",
+  "types": "kfa_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

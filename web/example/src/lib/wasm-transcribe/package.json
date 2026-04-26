@@ -1,0 +1,19 @@
+{
+  "name": "transcribe-audio-to-text",
+  "type": "module",
+  "collaborators": [
+    "Sila Rim <51617383+rimsila@users.noreply.github.com>"
+  ],
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "files": [
+    "transcribe_audio_to_text_bg.wasm",
+    "transcribe_audio_to_text.js",
+    "transcribe_audio_to_text.d.ts"
+  ],
+  "main": "transcribe_audio_to_text.js",
+  "types": "transcribe_audio_to_text.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
