@@ -1,4 +1,7 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
   "rewrites": [
     {
       "source": "/google-speech-api/:path*",
@@ -6,6 +9,12 @@
     }
   ],
   "headers": [
+    {
+      "source": "/(.*)\\.wasm",
+      "headers": [
+        { "key": "Content-Type", "value": "application/wasm" }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
