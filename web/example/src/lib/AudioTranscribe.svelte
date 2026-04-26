@@ -1,5 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import {
+    AUDIO_EXTS,
+    formatFileSize,
+    prepareAudioForTranscription,
+  } from './audio-transcribe/audio-processing.js';
+  import { DEMO_AUDIO_SAMPLES, loadDemoAudioFile } from './audio-transcribe/samples.js';
+  import { fmtTime, offsetSrtTimes, parseSrt, segmentWords } from './audio-transcribe/srt.js';
 
   // ── WASM state ──────────────────────────────────────────────────────────────
   let wasmReady = false;
@@ -40,26 +47,6 @@
   let processingStep = '';
   let sampleLoading = null;
 
-  const TARGET_SAMPLE_RATE = 16000;
-  const DEMO_AUDIO_SAMPLES = [
-    {
-      id: 'sample-1',
-      label: 'Sample 1',
-      url: 'https://cdn.jsdelivr.net/gh/next-mmo/nde-khmer-toolkit@main/data/samples_khm_1161_1980987674.wav',
-      fallbackUrl: '/demo-audio/samples_khm_1161_1980987674.wav',
-      filename: 'samples_khm_1161_1980987674.wav',
-      type: 'audio/wav',
-    },
-    {
-      id: 'sample-2',
-      label: 'Sample 2',
-      url: 'https://cdn.jsdelivr.net/gh/next-mmo/nde-khmer-toolkit@main/data/khmer-audio-16k.wav',
-      fallbackUrl: '/demo-audio/khmer-audio-16k.wav',
-      filename: 'khmer-audio-16k-demo.wav',
-      type: 'audio/wav',
-    },
-  ];
-
   const LANGUAGES = [
     { code: 'km-KH', label: '🇰🇭 Khmer' },
     { code: 'en-US', label: '🇺🇸 English' },
@@ -67,8 +54,6 @@
   ];
 
   // ── File handling ───────────────────────────────────────────────────────────
-  const AUDIO_EXTS = /\.(flac|wav|mp3|ogg|m4a|opus|webm|aac)$/i;
-
   function acceptFile(file) {
     if (!file) return;
     if (!AUDIO_EXTS.test(file.name)) {
@@ -84,6 +69,7 @@
     transcriptSrt = '';
     status = 'idle';
     errorMsg = '';
+    processingStep = '';
   }
 
   function onDrop(e) {
@@ -101,249 +87,13 @@
     status = 'idle';
     errorMsg = '';
     try {
-      let response = null;
-      let lastError = '';
-      for (const url of [sample.fallbackUrl, sample.url]) {
-        try {
-          response = await fetch(url, { cache: 'force-cache' });
-          if (response.ok) break;
-          lastError = `${response.status}`;
-        } catch (e) {
-          lastError = e?.message || String(e);
-        }
-        response = null;
-      }
-      if (!response) {
-        throw new Error(`Could not load ${sample.label}${lastError ? ` (${lastError})` : ''}`);
-      }
-      const blob = await response.blob();
-      const file = new File([blob], sample.filename, { type: blob.type || sample.type });
-      acceptFile(file);
+      acceptFile(await loadDemoAudioFile(sample));
     } catch (e) {
       errorMsg = e?.message || String(e);
       status = 'error';
     } finally {
       sampleLoading = null;
     }
-  }
-
-  function inferAudioContentType(file) {
-    const name = file.name.toLowerCase();
-    if (name.endsWith('.flac')) return 'audio/x-flac; rate=16000';
-    if (name.endsWith('.wav')) return 'audio/l16; rate=16000';
-    if (name.endsWith('.mp3')) return 'audio/mpeg';
-    if (name.endsWith('.ogg') || name.endsWith('.opus')) return 'audio/ogg';
-    if (name.endsWith('.webm')) return 'audio/webm';
-    if (name.endsWith('.m4a')) return 'audio/mp4';
-    if (name.endsWith('.aac')) return 'audio/aac';
-    return file.type || 'application/octet-stream';
-  }
-
-  async function decodeAudioFile(file) {
-    const Ctx = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-    if (!Ctx) throw new Error('This browser does not support Web Audio decoding.');
-    const ctx = new Ctx();
-    try {
-      return await ctx.decodeAudioData(await file.arrayBuffer());
-    } finally {
-      ctx.close?.();
-    }
-  }
-
-  function sampleAt(channel, pos) {
-    const i = Math.floor(pos);
-    if (i < 0) return channel[0] || 0;
-    if (i >= channel.length - 1) return channel[channel.length - 1] || 0;
-    const frac = pos - i;
-    return channel[i] * (1 - frac) + channel[i + 1] * frac;
-  }
-
-  function highPass(samples, sampleRate, cutoffHz) {
-    const out = new Float32Array(samples.length);
-    const dt = 1 / sampleRate;
-    const rc = 1 / (2 * Math.PI * cutoffHz);
-    const alpha = rc / (rc + dt);
-    let prevY = 0;
-    let prevX = samples[0] || 0;
-    for (let i = 0; i < samples.length; i++) {
-      const x = samples[i];
-      const y = alpha * (prevY + x - prevX);
-      out[i] = y;
-      prevY = y;
-      prevX = x;
-    }
-    return out;
-  }
-
-  function lowPass(samples, sampleRate, cutoffHz) {
-    const out = new Float32Array(samples.length);
-    const dt = 1 / sampleRate;
-    const rc = 1 / (2 * Math.PI * cutoffHz);
-    const alpha = dt / (rc + dt);
-    let y = samples[0] || 0;
-    for (let i = 0; i < samples.length; i++) {
-      y += alpha * (samples[i] - y);
-      out[i] = y;
-    }
-    return out;
-  }
-
-  function applyNoiseGate(samples, sampleRate) {
-    const frame = Math.max(1, Math.floor(sampleRate * 0.02));
-    const rms = [];
-    let peak = 0;
-    for (let i = 0; i < samples.length; i += frame) {
-      let sum = 0;
-      const end = Math.min(samples.length, i + frame);
-      for (let j = i; j < end; j++) {
-        const s = samples[j];
-        sum += s * s;
-        const a = Math.abs(s);
-        if (a > peak) peak = a;
-      }
-      rms.push(Math.sqrt(sum / Math.max(1, end - i)));
-    }
-    if (!peak) return samples;
-    const sorted = [...rms].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length * 0.5)] || 0;
-    const threshold = Math.max(peak * 0.012, median * 0.8, 0.002);
-    const out = new Float32Array(samples.length);
-    for (let frameIndex = 0; frameIndex < rms.length; frameIndex++) {
-      const gain = rms[frameIndex] < threshold ? 0.25 : 1;
-      const start = frameIndex * frame;
-      const end = Math.min(samples.length, start + frame);
-      for (let i = start; i < end; i++) out[i] = samples[i] * gain;
-    }
-    return out;
-  }
-
-  function normalizePeak(samples) {
-    let peak = 0;
-    for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
-    if (!peak) return samples;
-    const gain = Math.min(1.8, 0.92 / peak);
-    if (gain <= 1) return samples;
-    const out = new Float32Array(samples.length);
-    for (let i = 0; i < samples.length; i++) out[i] = samples[i] * gain;
-    return out;
-  }
-
-  function audioBufferToMono16k(audioBuffer, keepVocal) {
-    const outLength = Math.max(1, Math.ceil(audioBuffer.duration * TARGET_SAMPLE_RATE));
-    const out = new Float32Array(outLength);
-    const sourceRate = audioBuffer.sampleRate;
-    const channels = Array.from({ length: audioBuffer.numberOfChannels }, (_, i) => audioBuffer.getChannelData(i));
-
-    for (let i = 0; i < outLength; i++) {
-      const pos = i * sourceRate / TARGET_SAMPLE_RATE;
-      if (keepVocal && channels.length >= 2) {
-        out[i] = (sampleAt(channels[0], pos) + sampleAt(channels[1], pos)) * 0.5;
-      } else {
-        let sum = 0;
-        for (const channel of channels) sum += sampleAt(channel, pos);
-        out[i] = sum / channels.length;
-      }
-    }
-
-    if (!keepVocal) return out;
-    return normalizePeak(applyNoiseGate(lowPass(highPass(out, TARGET_SAMPLE_RATE, 90), TARGET_SAMPLE_RATE, 7400), TARGET_SAMPLE_RATE));
-  }
-
-  function encodeLinear16(samples) {
-    const bytes = new Uint8Array(samples.length * 2);
-    const view = new DataView(bytes.buffer);
-    for (let i = 0; i < samples.length; i++) {
-      const s = Math.max(-1, Math.min(1, samples[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    return bytes;
-  }
-
-  async function prepareAudioBytes(file) {
-    if (!convertTo16k && !reduceBackground) {
-      return {
-        bytes: new Uint8Array(await file.arrayBuffer()),
-        contentType: inferAudioContentType(file),
-      };
-    }
-
-    processingStep = reduceBackground
-      ? 'Preparing 16 kHz vocal-focused audio...'
-      : 'Converting to 16 kHz mono...';
-    const decoded = await decodeAudioFile(file);
-    const samples = audioBufferToMono16k(decoded, reduceBackground);
-    return {
-      bytes: encodeLinear16(samples),
-      contentType: 'audio/l16; rate=16000',
-    };
-  }
-
-  function getAudioDuration(url) {
-    return new Promise((resolve) => {
-      const audio = new Audio(url);
-      audio.onloadedmetadata = () => {
-        resolve(audio.duration);
-      };
-      audio.onerror = () => resolve(0);
-    });
-  }
-
-  // Lightweight VAD: decode PCM, find first/last frames where peak amplitude
-  // crosses a noise-floor-relative threshold. Used to trim leading/trailing
-  // silence so the linear SRT distributes words across actual speech only.
-  // Without this, padded audio causes the karaoke to drift behind by seconds.
-  async function detectSpeechBounds(file) {
-    try {
-      const arrayBuf = await file.arrayBuffer();
-      const Ctx = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-      const ctx = new Ctx();
-      const buf = await ctx.decodeAudioData(arrayBuf.slice(0));
-      const sr = buf.sampleRate;
-      const data = buf.getChannelData(0);
-      const total = data.length / sr;
-
-      let peak = 0;
-      for (let i = 0; i < data.length; i++) {
-        const a = data[i] < 0 ? -data[i] : data[i];
-        if (a > peak) peak = a;
-      }
-      ctx.close();
-      if (peak === 0) return { start: 0, end: total, total };
-
-      const threshold = peak * 0.04;            // 4% of peak — robust noise floor
-      const frame = Math.max(1, Math.floor(sr * 0.020));  // 20 ms frames
-      let firstS = -1, lastS = -1;
-      for (let i = 0; i < data.length; i += frame) {
-        let m = 0;
-        const limit = Math.min(i + frame, data.length);
-        for (let j = i; j < limit; j++) {
-          const a = data[j] < 0 ? -data[j] : data[j];
-          if (a > m) m = a;
-        }
-        if (m > threshold) {
-          if (firstS === -1) firstS = i;
-          lastS = limit;
-        }
-      }
-      if (firstS === -1) return { start: 0, end: total, total };
-      return { start: firstS / sr, end: lastS / sr, total };
-    } catch {
-      const total = await getAudioDuration(URL.createObjectURL(file));
-      return { start: 0, end: total, total };
-    }
-  }
-
-  // Shift every HH:MM:SS,mmm timestamp in an SRT string by `offset` seconds.
-  function offsetSrtTimes(srt, offset) {
-    if (!offset) return srt;
-    return srt.replace(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/g, (_, h, m, s, ms) => {
-      const t = +h * 3600 + +m * 60 + +s + +ms / 1000 + offset;
-      const oh = Math.floor(t / 3600);
-      const om = Math.floor((t % 3600) / 60);
-      const os = Math.floor(t % 60);
-      const oms = Math.round((t - Math.floor(t)) * 1000);
-      return `${String(oh).padStart(2,'0')}:${String(om).padStart(2,'0')}:${String(os).padStart(2,'0')},${String(oms).padStart(3,'0')}`;
-    });
   }
 
   // ── Transcription ───────────────────────────────────────────────────────────
@@ -356,11 +106,12 @@
     errorMsg = '';
     processingStep = '';
     try {
-      // Run VAD + preprocessing in parallel — both only read the file locally.
-      const [bounds, prepared] = await Promise.all([
-        detectSpeechBounds(audioFile),
-        prepareAudioBytes(audioFile),
-      ]);
+      const prepared = await prepareAudioForTranscription(audioFile, {
+        convertTo16k,
+        reduceBackground,
+        onStep: (step) => { processingStep = step; },
+      });
+      const { bounds } = prepared;
       processingStep = 'Transcribing...';
       transcript = await transcribeFn(prepared.bytes, language, prepared.contentType);
 
@@ -394,19 +145,6 @@
     if (text) navigator.clipboard.writeText(text).catch(() => {});
   }
 
-  // Segment text into words using the browser's ICU Intl.Segmenter.
-  // Critical for Khmer (and Chinese, Japanese, Thai) where words are not
-  // space-delimited — without this, split_whitespace() in the Rust WASM
-  // treats the whole sentence as one token.
-  function segmentWords(text, locale) {
-    if (!text || typeof Intl?.Segmenter === 'undefined') return text;
-    const seg = new Intl.Segmenter(locale, { granularity: 'word' });
-    return [...seg.segment(text)]
-      .filter(s => s.isWordLike)
-      .map(s => s.segment)
-      .join(' ');
-  }
-
   function downloadSrt() {
     if (!transcriptSrt) return;
     const blob = new Blob([transcriptSrt], { type: 'text/plain' });
@@ -417,7 +155,7 @@
     URL.revokeObjectURL(a.href);
   }
 
-  $: fmtSize = audioFile ? (audioFile.size > 1e6 ? (audioFile.size/1e6).toFixed(1)+' MB' : (audioFile.size/1024).toFixed(0)+' KB') : '';
+  $: fmtSize = formatFileSize(audioFile);
 
   // ── SRT player ──────────────────────────────────────────────────────────────
   // NOTE: kfa-wasm `generate_linear_srt` produces **one cue per word** with
@@ -440,19 +178,6 @@
     const out = [];
     for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
     return out;
-  }
-
-  function parseSrt(srtText) {
-    return srtText.trim().split(/\n\n+/).flatMap(block => {
-      const lines = block.trim().split('\n');
-      const timeLine = lines.find(l => l.includes('-->'));
-      if (!timeLine) return [];
-      const m = timeLine.match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
-      if (!m) return [];
-      const toSec = (h, min, s, ms) => +h * 3600 + +min * 60 + +s + +ms / 1000;
-      const text = lines.filter(l => !/^\d+$/.test(l.trim()) && !l.includes('-->')).join('\n').trim();
-      return [{ start: toSec(m[1],m[2],m[3],m[4]), end: toSec(m[5],m[6],m[7],m[8]), text }];
-    });
   }
 
   function syncFromTime(t) {
@@ -498,13 +223,6 @@
     activeWordFill = 0;
   }
 
-  function fmtTime(sec) {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = Math.floor(sec % 60);
-    const ms = Math.round((sec % 1) * 1000);
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`;
-  }
 </script>
 
 <!-- ===== HEADER ===== -->
