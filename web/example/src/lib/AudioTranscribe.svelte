@@ -38,8 +38,27 @@
   let convertTo16k = true;
   let reduceBackground = false;
   let processingStep = '';
+  let sampleLoading = null;
 
   const TARGET_SAMPLE_RATE = 16000;
+  const DEMO_AUDIO_SAMPLES = [
+    {
+      id: 'sample-1',
+      label: 'Sample 1',
+      url: 'https://cdn.jsdelivr.net/gh/next-mmo/nde-khmer-toolkit@main/data/samples_khm_1161_1980987674.wav',
+      fallbackUrl: '/demo-audio/samples_khm_1161_1980987674.wav',
+      filename: 'samples_khm_1161_1980987674.wav',
+      type: 'audio/wav',
+    },
+    {
+      id: 'sample-2',
+      label: 'Sample 2',
+      url: 'https://cdn.jsdelivr.net/gh/next-mmo/nde-khmer-toolkit@main/data/khmer-audio-16k.wav',
+      fallbackUrl: '/demo-audio/khmer-audio-16k.wav',
+      filename: 'khmer-audio-16k-demo.wav',
+      type: 'audio/wav',
+    },
+  ];
 
   const LANGUAGES = [
     { code: 'km-KH', label: '🇰🇭 Khmer' },
@@ -75,6 +94,38 @@
   function onPick(e) { acceptFile(e.target.files?.[0]); }
   function onDragOver(e) { e.preventDefault(); isDragging = true; }
   function onDragLeave() { isDragging = false; }
+
+  async function loadDemoAudio(sample) {
+    if (sampleLoading || status === 'transcribing') return;
+    sampleLoading = sample.id;
+    status = 'idle';
+    errorMsg = '';
+    try {
+      let response = null;
+      let lastError = '';
+      for (const url of [sample.fallbackUrl, sample.url]) {
+        try {
+          response = await fetch(url, { cache: 'force-cache' });
+          if (response.ok) break;
+          lastError = `${response.status}`;
+        } catch (e) {
+          lastError = e?.message || String(e);
+        }
+        response = null;
+      }
+      if (!response) {
+        throw new Error(`Could not load ${sample.label}${lastError ? ` (${lastError})` : ''}`);
+      }
+      const blob = await response.blob();
+      const file = new File([blob], sample.filename, { type: blob.type || sample.type });
+      acceptFile(file);
+    } catch (e) {
+      errorMsg = e?.message || String(e);
+      status = 'error';
+    } finally {
+      sampleLoading = null;
+    }
+  }
 
   function inferAudioContentType(file) {
     const name = file.name.toLowerCase();
@@ -537,10 +588,21 @@
       <div class="drop-icon">{isDragging ? '📂' : '🎵'}</div>
       <h2>Drop your audio file here</h2>
       <p>Drag & drop a FLAC, WAV, MP3, OGG, or similar file, or click to browse.</p>
-      <label class="btn-pick" for="audio-file-input">
-        Browse file…
-        <input id="audio-file-input" type="file" accept="audio/*,.flac" on:change={onPick} />
-      </label>
+      <div class="drop-actions">
+        <label class="btn-pick" for="audio-file-input">
+          Browse file…
+          <input id="audio-file-input" type="file" accept="audio/*,.flac" on:change={onPick} />
+        </label>
+        {#each DEMO_AUDIO_SAMPLES as sample}
+          <button
+            class="btn-sample"
+            disabled={sampleLoading || status === 'transcribing'}
+            on:click={() => loadDemoAudio(sample)}
+          >
+            {sampleLoading === sample.id ? 'Loading...' : sample.label}
+          </button>
+        {/each}
+      </div>
     {:else}
       <!-- File preview -->
       <div class="file-preview">
@@ -628,6 +690,15 @@
             Change file
             <input id="audio-file-input2" type="file" accept="audio/*,.flac" on:change={onPick} />
           </label>
+          {#each DEMO_AUDIO_SAMPLES as sample}
+            <button
+              class="btn-pick-sm"
+              disabled={sampleLoading || status === 'transcribing'}
+              on:click={() => loadDemoAudio(sample)}
+            >
+              {sampleLoading === sample.id ? 'Loading...' : sample.label}
+            </button>
+          {/each}
         </div>
       </div>
     {/if}
@@ -941,6 +1012,34 @@
   .btn-pick:hover { opacity: 0.9; transform: translateY(-1px); }
   .btn-pick input, .btn-pick-sm input { display: none; }
 
+  .drop-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .btn-sample {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #cbd5e1;
+    padding: 0.72em 1.4em;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .btn-sample:hover:not(:disabled) {
+    background: rgba(20,184,166,0.1);
+    border-color: rgba(20,184,166,0.3);
+    color: #ccfbf1;
+  }
+  .btn-sample:disabled { opacity: 0.45; cursor: not-allowed; }
+
   /* ── File preview ── */
   .file-preview {
     display: flex;
@@ -1037,6 +1136,7 @@
     white-space: nowrap;
   }
   .btn-pick-sm:hover { background: rgba(255,255,255,0.09); }
+  .btn-pick-sm:disabled { opacity: 0.45; cursor: not-allowed; }
 
   .spin { display: inline-block; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }

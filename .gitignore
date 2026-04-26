@@ -192,6 +192,8 @@ Temporary Items
 *.wav
 
 !khmer-audio-16k.wav
+!samples_khm_1161_1980987674.wav
+!web/example/public/demo-audio/*.wav
 
 *.txt
 .omx/state/hud-state.json
