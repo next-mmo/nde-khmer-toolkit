@@ -35,6 +35,11 @@
   let transcriptSrt = '';
   let status = 'idle';      // 'idle' | 'transcribing' | 'done' | 'error'
   let errorMsg = '';
+  let convertTo16k = true;
+  let reduceBackground = false;
+  let processingStep = '';
+
+  const TARGET_SAMPLE_RATE = 16000;
 
   const LANGUAGES = [
     { code: 'km-KH', label: '🇰🇭 Khmer' },
@@ -70,6 +75,157 @@
   function onPick(e) { acceptFile(e.target.files?.[0]); }
   function onDragOver(e) { e.preventDefault(); isDragging = true; }
   function onDragLeave() { isDragging = false; }
+
+  function inferAudioContentType(file) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.flac')) return 'audio/x-flac; rate=16000';
+    if (name.endsWith('.wav')) return 'audio/l16; rate=16000';
+    if (name.endsWith('.mp3')) return 'audio/mpeg';
+    if (name.endsWith('.ogg') || name.endsWith('.opus')) return 'audio/ogg';
+    if (name.endsWith('.webm')) return 'audio/webm';
+    if (name.endsWith('.m4a')) return 'audio/mp4';
+    if (name.endsWith('.aac')) return 'audio/aac';
+    return file.type || 'application/octet-stream';
+  }
+
+  async function decodeAudioFile(file) {
+    const Ctx = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+    if (!Ctx) throw new Error('This browser does not support Web Audio decoding.');
+    const ctx = new Ctx();
+    try {
+      return await ctx.decodeAudioData(await file.arrayBuffer());
+    } finally {
+      ctx.close?.();
+    }
+  }
+
+  function sampleAt(channel, pos) {
+    const i = Math.floor(pos);
+    if (i < 0) return channel[0] || 0;
+    if (i >= channel.length - 1) return channel[channel.length - 1] || 0;
+    const frac = pos - i;
+    return channel[i] * (1 - frac) + channel[i + 1] * frac;
+  }
+
+  function highPass(samples, sampleRate, cutoffHz) {
+    const out = new Float32Array(samples.length);
+    const dt = 1 / sampleRate;
+    const rc = 1 / (2 * Math.PI * cutoffHz);
+    const alpha = rc / (rc + dt);
+    let prevY = 0;
+    let prevX = samples[0] || 0;
+    for (let i = 0; i < samples.length; i++) {
+      const x = samples[i];
+      const y = alpha * (prevY + x - prevX);
+      out[i] = y;
+      prevY = y;
+      prevX = x;
+    }
+    return out;
+  }
+
+  function lowPass(samples, sampleRate, cutoffHz) {
+    const out = new Float32Array(samples.length);
+    const dt = 1 / sampleRate;
+    const rc = 1 / (2 * Math.PI * cutoffHz);
+    const alpha = dt / (rc + dt);
+    let y = samples[0] || 0;
+    for (let i = 0; i < samples.length; i++) {
+      y += alpha * (samples[i] - y);
+      out[i] = y;
+    }
+    return out;
+  }
+
+  function applyNoiseGate(samples, sampleRate) {
+    const frame = Math.max(1, Math.floor(sampleRate * 0.02));
+    const rms = [];
+    let peak = 0;
+    for (let i = 0; i < samples.length; i += frame) {
+      let sum = 0;
+      const end = Math.min(samples.length, i + frame);
+      for (let j = i; j < end; j++) {
+        const s = samples[j];
+        sum += s * s;
+        const a = Math.abs(s);
+        if (a > peak) peak = a;
+      }
+      rms.push(Math.sqrt(sum / Math.max(1, end - i)));
+    }
+    if (!peak) return samples;
+    const sorted = [...rms].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length * 0.5)] || 0;
+    const threshold = Math.max(peak * 0.012, median * 0.8, 0.002);
+    const out = new Float32Array(samples.length);
+    for (let frameIndex = 0; frameIndex < rms.length; frameIndex++) {
+      const gain = rms[frameIndex] < threshold ? 0.25 : 1;
+      const start = frameIndex * frame;
+      const end = Math.min(samples.length, start + frame);
+      for (let i = start; i < end; i++) out[i] = samples[i] * gain;
+    }
+    return out;
+  }
+
+  function normalizePeak(samples) {
+    let peak = 0;
+    for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
+    if (!peak) return samples;
+    const gain = Math.min(1.8, 0.92 / peak);
+    if (gain <= 1) return samples;
+    const out = new Float32Array(samples.length);
+    for (let i = 0; i < samples.length; i++) out[i] = samples[i] * gain;
+    return out;
+  }
+
+  function audioBufferToMono16k(audioBuffer, keepVocal) {
+    const outLength = Math.max(1, Math.ceil(audioBuffer.duration * TARGET_SAMPLE_RATE));
+    const out = new Float32Array(outLength);
+    const sourceRate = audioBuffer.sampleRate;
+    const channels = Array.from({ length: audioBuffer.numberOfChannels }, (_, i) => audioBuffer.getChannelData(i));
+
+    for (let i = 0; i < outLength; i++) {
+      const pos = i * sourceRate / TARGET_SAMPLE_RATE;
+      if (keepVocal && channels.length >= 2) {
+        out[i] = (sampleAt(channels[0], pos) + sampleAt(channels[1], pos)) * 0.5;
+      } else {
+        let sum = 0;
+        for (const channel of channels) sum += sampleAt(channel, pos);
+        out[i] = sum / channels.length;
+      }
+    }
+
+    if (!keepVocal) return out;
+    return normalizePeak(applyNoiseGate(lowPass(highPass(out, TARGET_SAMPLE_RATE, 90), TARGET_SAMPLE_RATE, 7400), TARGET_SAMPLE_RATE));
+  }
+
+  function encodeLinear16(samples) {
+    const bytes = new Uint8Array(samples.length * 2);
+    const view = new DataView(bytes.buffer);
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return bytes;
+  }
+
+  async function prepareAudioBytes(file) {
+    if (!convertTo16k && !reduceBackground) {
+      return {
+        bytes: new Uint8Array(await file.arrayBuffer()),
+        contentType: inferAudioContentType(file),
+      };
+    }
+
+    processingStep = reduceBackground
+      ? 'Preparing 16 kHz vocal-focused audio...'
+      : 'Converting to 16 kHz mono...';
+    const decoded = await decodeAudioFile(file);
+    const samples = audioBufferToMono16k(decoded, reduceBackground);
+    return {
+      bytes: encodeLinear16(samples),
+      contentType: 'audio/l16; rate=16000',
+    };
+  }
 
   function getAudioDuration(url) {
     return new Promise((resolve) => {
@@ -147,18 +303,15 @@
     transcriptNormalized = '';
     transcriptSrt = '';
     errorMsg = '';
+    processingStep = '';
     try {
-      // Run VAD + transcription in parallel — VAD only reads the file locally.
-      const [bounds, _bytesReady] = await Promise.all([
+      // Run VAD + preprocessing in parallel — both only read the file locally.
+      const [bounds, prepared] = await Promise.all([
         detectSpeechBounds(audioFile),
-        Promise.resolve(),
+        prepareAudioBytes(audioFile),
       ]);
-      const bytes = new Uint8Array(await audioFile.arrayBuffer());
-      let contentType = 'audio/x-flac; rate=16000'; // Default to FLAC
-      if (audioFile.name.toLowerCase().endsWith('.wav')) {
-        contentType = 'audio/l16; rate=16000';
-      }
-      transcript = await transcribeFn(bytes, language, contentType);
+      processingStep = 'Transcribing...';
+      transcript = await transcribeFn(prepared.bytes, language, prepared.contentType);
 
       if (normalizeFn) {
         transcriptNormalized = normalizeFn(transcript, true, true);
@@ -175,13 +328,15 @@
     } catch (e) {
       errorMsg = e?.message || String(e);
       status = 'error';
+    } finally {
+      processingStep = '';
     }
   }
 
   function reset() {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioFile = null; audioUrl = null;
-    transcript = ''; transcriptNormalized = ''; transcriptSrt = ''; status = 'idle'; errorMsg = '';
+    transcript = ''; transcriptNormalized = ''; transcriptSrt = ''; status = 'idle'; errorMsg = ''; processingStep = '';
   }
 
   function copyText(text) {
@@ -346,16 +501,33 @@
       </div>
     </div>
 
+    <div class="audio-options" aria-label="Audio preprocessing options">
+      <label class="check-option">
+        <input type="checkbox" bind:checked={convertTo16k} />
+        <span>
+          <strong>Convert to 16 kHz mono</strong>
+          <small>Browser-side PCM conversion before transcription</small>
+        </span>
+      </label>
+
+      <label class="check-option">
+        <input type="checkbox" bind:checked={reduceBackground} />
+        <span>
+          <strong>Remove background, keep vocal</strong>
+          <small>Experimental Web Audio filter; also sends 16 kHz mono</small>
+        </span>
+      </label>
+    </div>
+
     <!-- Note about FLAC/WAV -->
     <p class="note">
-      💡 For best results, upload a <strong>FLAC or WAV</strong> file at <strong>16 kHz mono</strong>.
+      💡 For best results, keep <strong>Convert to 16 kHz mono</strong> enabled unless your file is already prepared.
     </p>
   </section>
 
   <!-- Drop zone -->
   <section
     class="glass drop-zone {isDragging ? 'dragging' : ''} {audioFile ? 'has-file' : ''}"
-    role="region"
     aria-label="Audio file drop zone"
     on:dragover={onDragOver}
     on:dragleave={onDragLeave}
@@ -447,7 +619,7 @@
             on:click={transcribe}
           >
             {#if status === 'transcribing'}
-              <span class="spin">⟳</span> Transcribing…
+              <span class="spin">⟳</span> {processingStep || 'Transcribing...'}
             {:else}
               Transcribe →
             {/if}
@@ -671,6 +843,53 @@
     pointer-events: none;
     color: #475569;
     font-size: 0.8rem;
+  }
+
+  .audio-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .check-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.85rem 0.95rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    color: #cbd5e1;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .check-option input {
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.15rem;
+    accent-color: #14b8a6;
+    flex-shrink: 0;
+  }
+
+  .check-option span {
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+    min-width: 0;
+  }
+
+  .check-option strong {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #dbeafe;
+    line-height: 1.25;
+  }
+
+  .check-option small {
+    font-size: 0.74rem;
+    color: #64748b;
+    line-height: 1.35;
   }
 
   .note {
@@ -1065,6 +1284,7 @@
 
   @media (max-width: 600px) {
     .header-chips { display: none; }
+    .audio-options { grid-template-columns: 1fr; }
     .action-row { flex-direction: column; }
     .btn-transcribe { width: 100%; }
   }
