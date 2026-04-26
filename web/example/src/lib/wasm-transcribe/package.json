@@ -13,7 +13,5 @@
   ],
   "main": "transcribe_audio_to_text.js",
   "types": "transcribe_audio_to_text.d.ts",
-  "sideEffects": [
-    "./snippets/*"
-  ]
+  "sideEffects": false
 }

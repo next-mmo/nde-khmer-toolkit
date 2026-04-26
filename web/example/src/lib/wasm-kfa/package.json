@@ -13,7 +13,5 @@
   ],
   "main": "kfa_wasm.js",
   "types": "kfa_wasm.d.ts",
-  "sideEffects": [
-    "./snippets/*"
-  ]
+  "sideEffects": false
 }
