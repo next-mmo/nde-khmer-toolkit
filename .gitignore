@@ -197,3 +197,4 @@ Temporary Items
 
 *.txt
 .omx/state/hud-state.json
+web/edge-tts-bridge/

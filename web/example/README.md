@@ -1,43 +1,35 @@
-# Svelte + Vite
+# KFA Web Example
 
-This template should help get you started developing with Svelte in Vite.
+Static Svelte/Vite demo for Khmer text and audio tools. The app is designed to run in the browser, with most heavy logic compiled from Rust to WebAssembly.
 
-## Recommended IDE Setup
+## Goals
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+- Work from a static build; no required app server for core flows.
+- Keep Khmer normalization, number handling, G2P, subtitle generation, and future alignment logic in WASM where practical.
+- Treat native APIs, CLIs, and TTS services as optional companion tools, not web runtime requirements.
+- Avoid backend-only dependencies in the frontend.
 
-## Need an official Svelte framework?
+## Run
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
-
-## Technical considerations
-
-**Why use this over SvelteKit?**
-
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
-
-This template contains as little as possible to get started with Vite + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
-
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `checkJs` in the JS template?**
-
-It is likely that most cases of changing variable types in runtime are likely to be accidental, rather than deliberate. This provides advanced typechecking out of the box. Should you like to take advantage of the dynamically-typed nature of JavaScript, it is trivial to change the configuration.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/sveltejs/svelte-hmr/tree/master/packages/svelte-hmr#preservation-of-local-state).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```js
-// store.js
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```sh
+npm install
+npm run dev
 ```
+
+## Build
+
+```sh
+npm run build
+npm run preview
+```
+
+The production output is `dist/` and can be deployed to static hosting. Ensure `.wasm` files are served as `application/wasm`; keep COOP/COEP headers if a WASM feature requires shared memory, workers, or streaming instantiation.
+
+## WASM Layout
+
+- `src/lib/wasm/` contains generated G2P glue.
+- `src/lib/wasm-kfa/` contains generated KFA browser glue.
+- `src/lib/wasm-transcribe/` contains generated speech transcription glue.
+- `public/*.wasm` and `public/wasm/*` contain browser-loadable WASM/model assets.
+
+Do not hand-edit generated WASM glue unless there is no source-level fix. Prefer updating the Rust crate and regenerating the browser package.

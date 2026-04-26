@@ -4,10 +4,14 @@
   import OnboardingScreen from './lib/OnboardingScreen.svelte';
   import Phonetizer from './lib/Phonetizer.svelte';
   import AudioTranscribe from './lib/AudioTranscribe.svelte';
+  import TtsStudio from './lib/TtsStudio.svelte';
 
   // ── App-level tab ─────────────────────────────────────────────────────────
-  // 'g2p' = Grapheme-to-Phoneme  |  'stt' = Speech-to-Text
-  let appTab = 'g2p';
+  // 'g2p' = Grapheme-to-Phoneme  |  'stt' = Speech-to-Text  |  'tts' = Text-to-Speech
+  const APP_TABS = ['g2p', 'stt', 'tts'];
+  const APP_TAB_STORAGE_KEY = 'nde-khmer-toolkit:app-tab';
+
+  let appTab = getInitialAppTab();
 
   // ── G2P (sosap) state ─────────────────────────────────────────────────────
   // phase: 'loading-wasm' | 'onboarding' | 'loading-model' | 'ready' | 'error'
@@ -16,17 +20,44 @@
   let wasmMod = null;
   let model = null;
 
-  onMount(async () => {
-    try {
-      wasmMod = await import('./lib/wasm/sosap.js');
-      await wasmMod.default('/wasm/sosap_bg.wasm');
-      phase = 'onboarding';
-    } catch (e) {
-      console.error(e);
-      loadError = e.message || String(e);
-      phase = 'error';
-    }
+  onMount(() => {
+    window.addEventListener('hashchange', syncTabFromHash);
+
+    (async () => {
+      try {
+        wasmMod = await import('./lib/wasm/sosap.js');
+        await wasmMod.default('/wasm/sosap_bg.wasm');
+        phase = 'onboarding';
+      } catch (e) {
+        console.error(e);
+        loadError = e.message || String(e);
+        phase = 'error';
+      }
+    })();
+
+    return () => window.removeEventListener('hashchange', syncTabFromHash);
   });
+
+  function getInitialAppTab() {
+    if (typeof window === 'undefined') return 'g2p';
+    const hashTab = window.location.hash.replace(/^#/, '');
+    const storedTab = window.localStorage.getItem(APP_TAB_STORAGE_KEY);
+    return APP_TABS.includes(hashTab) ? hashTab : APP_TABS.includes(storedTab) ? storedTab : 'g2p';
+  }
+
+  function setAppTab(tab) {
+    if (!APP_TABS.includes(tab)) return;
+    appTab = tab;
+    window.localStorage.setItem(APP_TAB_STORAGE_KEY, tab);
+    if (window.location.hash !== `#${tab}`) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${tab}`);
+    }
+  }
+
+  function syncTabFromHash() {
+    const hashTab = window.location.hash.replace(/^#/, '');
+    if (APP_TABS.includes(hashTab)) setAppTab(hashTab);
+  }
 
   async function handleModelFile(file) {
     phase = 'loading-model';
@@ -52,15 +83,21 @@
 <nav class="app-nav">
   <button
     class="nav-tab {appTab === 'g2p' ? 'active' : ''}"
-    on:click={() => appTab = 'g2p'}
+    on:click={() => setAppTab('g2p')}
   >
     ꓢ&nbsp; G2P Phonetizer
   </button>
   <button
     class="nav-tab {appTab === 'stt' ? 'active' : ''}"
-    on:click={() => appTab = 'stt'}
+    on:click={() => setAppTab('stt')}
   >
     🎙️&nbsp; Audio Transcribe
+  </button>
+  <button
+    class="nav-tab {appTab === 'tts' ? 'active' : ''}"
+    on:click={() => setAppTab('tts')}
+  >
+    🔊&nbsp; TTS
   </button>
 </nav>
 
@@ -89,6 +126,11 @@
 <!-- ── STT panel ──────────────────────────────────────────────────────────── -->
 {#if appTab === 'stt'}
   <AudioTranscribe />
+{/if}
+
+<!-- ── TTS panel ──────────────────────────────────────────────────────────── -->
+{#if appTab === 'tts'}
+  <TtsStudio />
 {/if}
 
 <style>
